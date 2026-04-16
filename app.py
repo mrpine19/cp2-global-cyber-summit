@@ -50,8 +50,11 @@ BLOCO_PLSQL_AUDIT = r'''
                     WHERE id = v_inscricoes.id_inscricao;
 
                     INSERT INTO LOG_AUDITORIA (INSCRICAO_ID, MOTIVO, DATA) 
-                    VALUES (v_inscricoes.id_inscricao, 'E-mail fraudulento ou malformado detectado.', SYSDATE);
-
+                    VALUES (v_inscricoes.id_inscricao, 'E-mail fraudulento detectado.', SYSDATE);
+                ELSE
+                    UPDATE inscricoes 
+                    SET status = 'VERIFIED' 
+                    WHERE id = v_inscricoes.id_inscricao;
                 END IF;
 
             END LOOP;
@@ -100,6 +103,7 @@ def index():
                 FROM usuarios u 
                 JOIN inscricoes i ON u.id = i.usuario_id 
                 WHERE i.status = 'PENDING'
+                OR i.status = 'VERIFIED'
             """)
 
             cursor.rowfactory = make_dict_factory(cursor)
@@ -125,7 +129,7 @@ def run_audit():
     try:
         with obter_conexao() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(BLOCO_PLSQL_AUDIT, regex=REGEX_EMAIL)
+                cursor.execute(BLOCO_PLSQL_AUDIT)
             flash('Varredura em lote concluída!', 'success')
     except Exception as e:
         flash(f'Falha na auditoria: {e}', 'error')
@@ -147,17 +151,60 @@ def run_audit_id():
                     id=reg_id)
                 res = cursor.fetchone()
 
-                if res and is_email_fraudulento(res[1]):
-                    cursor.execute("UPDATE usuarios SET trust_score = trust_score - 15 WHERE id = :id", id=res[0])
-                    cursor.execute("UPDATE inscricoes SET status = 'CANCELLED' WHERE id = :id", id=reg_id)
-                    cursor.execute("INSERT INTO LOG_AUDITORIA (INSCRICAO_ID, MOTIVO) VALUES (:id, 'Fraude Individual')",
-                                   id=reg_id)
-                    conn.commit()
-                    flash(f'Inscrição #{reg_id} cancelada!', 'info')
+                if res:
+                    if is_email_fraudulento(res[1]):
+                        cursor.execute("UPDATE usuarios SET trust_score = trust_score - 15 WHERE id = :id", id=res[0])
+                        cursor.execute("UPDATE inscricoes SET status = 'CANCELLED' WHERE id = :id", id=reg_id)
+                        cursor.execute("INSERT INTO LOG_AUDITORIA (INSCRICAO_ID, MOTIVO) VALUES (:id, 'Fraude Individual')",
+                                       id=reg_id)
+                        conn.commit()
+                        flash(f'Inscrição #{reg_id} cancelada!', 'info')
+                    else:
+                        cursor.execute("UPDATE inscricoes SET status = 'VERIFIED' WHERE id = :id", id=reg_id)
+                        conn.commit()
+                        flash(f'Inscrição #{reg_id} verificada e aprovada.', 'success')
                 else:
-                    flash(f'Inscrição #{reg_id} está limpa.', 'success')
+                    flash(f'Inscrição #{reg_id} não encontrada ou já verificada.', 'warning')
     except Exception as e:
         flash(f'Erro: {e}', 'error')
+
+    return redirect(url_for('index'))
+
+@app.route('/add_user', methods=['POST'])
+def add_user():
+    nome = request.form.get('nome')
+    email = request.form.get('email')
+
+    if not nome or not email:
+        flash('Nome e e-mail são obrigatórios.', 'error')
+        return redirect(url_for('index'))
+
+    try:
+        with obter_conexao() as conn:
+            cursor = conn.cursor()
+    
+            user_id_var = cursor.var(int)
+            
+            cursor.execute("""
+                INSERT INTO usuarios (nome, email) 
+                VALUES (:nome, :email) 
+                RETURNING id INTO :id
+            """, nome=nome, email=email, id=user_id_var)
+            
+            user_id = user_id_var.getvalue()[0]
+
+            cursor.execute("""
+                INSERT INTO inscricoes (usuario_id, status) 
+                VALUES (:user_id, 'PENDING')
+            """, user_id=user_id)
+            
+            conn.commit()
+            flash(f'Usuário {nome} adicionado com sucesso! Inscrição pendente gerada.', 'success')
+
+    except oracledb.IntegrityError:
+        flash(f'O e-mail {email} já está cadastrado.', 'error')
+    except Exception as e:
+        flash(f'Ocorreu um erro: {e}', 'error')
 
     return redirect(url_for('index'))
 

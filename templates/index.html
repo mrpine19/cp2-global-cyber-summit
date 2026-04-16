@@ -24,7 +24,6 @@
         {% endwith %}
 
         <section class="actions-grid">
-            <!-- Varredura Automática -->
             <div class="action-panel">
                 <h2>🚨 Varredura Automática 🚨</h2>
                 <p>Inicia a varredura PL/SQL em <strong>todas</strong> as inscrições com status 'PENDING' para detectar e-mails suspeitos (fake.com, temp-mail).</p>
@@ -33,7 +32,6 @@
                 </form>
             </div>
 
-            <!-- Varredura por ID -->
             <div class="action-panel">
                 <h2>🔎 Varredura por ID 🔎</h2>
                 <p>Analisa uma inscrição específica. O PL/SQL irá verificar o e-mail e aplicar as regras de negócio apenas para o ID fornecido.</p>
@@ -42,15 +40,25 @@
                     <button type="submit" class="btn-scan-id">VERIFICAR ID</button>
                 </form>
             </div>
+
+            <div class="action-panel">
+                <h2>👤 Adicionar Usuário e Inscrição 👤</h2>
+                <p>Cria um novo usuário e automaticamente adiciona uma inscrição pendente para ele.</p>
+                <form action="{{ url_for('add_user') }}" method="POST" class="form-inline" style="flex-direction: column; align-items: stretch; gap: 10px;">
+                    <input type="text" name="nome" placeholder="Nome Completo" required>
+                   <input type="text" name="email" placeholder="E-mail" required>
+                    <button type="submit" class="btn-scan" style="background-color: #28a745;">CRIAR USUÁRIO</button>
+                </form>
+            </div>
         </section>
 
         <section class="dashboard">
             <div class="panel">
-                <h2>Inscrições Suspeitas (PENDING)</h2>
+                <h2>Inscrições Suspeitas</h2>
                 <table>
                     <thead>
                         <tr>
-                            <th>ID</th>
+                            <th>ID Insc.</th>
                             <th>Nome</th>
                             <th>Email</th>
                             <th>Trust Score</th>
@@ -60,13 +68,17 @@
                     <tbody>
                         {% for reg in registrations %}
                         <tr>
-                            <td>#{{ reg.id }}</td>
+                            <td>#{{ reg.inscricao_id }}</td>
                             <td>{{ reg.name }}</td>
                             <td class="{% if 'fake' in reg.email or 'temp' in reg.email %}suspicious{% endif %}">
                                 {{ reg.email }}
                             </td>
                             <td>{{ reg.trust_score }}</td>
                             <td><span class="badge pending">{{ reg.status }}</span></td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5">Nenhuma inscrição pendente.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
