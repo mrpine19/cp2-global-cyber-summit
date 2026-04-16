@@ -2,7 +2,6 @@ import os
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, flash, redirect, url_for
 import oracledb
-import re
 
 load_dotenv()
 
@@ -121,8 +120,9 @@ def faz_consulta_banco():
             
             cursor.close()
 
-    except oracledb.Error as e:
-        print(f"Erro do banco de dados: {e}")
+    except oracledb.DatabaseError as e:
+        error, = e.args
+        print(f"Erro do banco de dados: Código {error.code} - {error.message}")
     except Exception as ex:
         print(f"Ocorreu um erro inesperado: {ex}")
     
@@ -144,10 +144,12 @@ def run_audit():
             cursor = conn.cursor()
             cursor.execute(bloco_plsql)
             conn.commit()
+            cursor.close()
             flash('Varredura automática executada com sucesso! Todos os e-mails suspeitos foram bloqueados e Trust Scores reduzidos.', 'success')
-    except oracledb.Error as e:
-        flash(f'Erro ao executar varredura automática: {e}', 'error')
-        print(f"Erro ao executar bloco PL/SQL: {e}")
+    except oracledb.DatabaseError as e:
+        error, = e.args
+        flash(f'Erro Oracle na varredura automática: {error.code} - {error.message}', 'error')
+        print(f"Erro ao executar bloco PL/SQL: {error.code} - {error.message}")
     except Exception as ex:
         flash(f'Ocorreu um erro inesperado durante a varredura automática: {ex}', 'error')
         print(f"Erro inesperado: {ex}")
@@ -159,61 +161,75 @@ def run_audit_id():
     reg_id = request.form.get('reg_id')
     if reg_id:
         try:
-            with obter_conexao() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT 
-                        u.id, 
-                        u.email,
-                        i.id
-                    FROM 
-                        usuarios u
-                    JOIN 
-                        inscricoes i ON u.id = i.usuario_id
-                    WHERE 
-                        i.id = :reg_id
-                """, reg_id=reg_id)
-                
-                result = cursor.fetchone()
-                
-                if result:
-                    user_id, user_email, inscricao_id = result
+            bloco_plsql_id = r'''
+                DECLARE
+                    CURSOR c_inscricao IS
+                        SELECT 
+                            i.id AS id_inscricao,
+                            i.usuario_id,
+                            u.email
+                        FROM 
+                            inscricoes i
+                        JOIN 
+                            usuarios u ON i.usuario_id = u.id
+                        WHERE 
+                            i.id = :p_inscricao_id
+                            AND i.status = 'PENDING';
+                            
+                    v_inscricao c_inscricao%ROWTYPE;
+                    v_encontrou_registro BOOLEAN := FALSE;
+                BEGIN
+                    OPEN c_inscricao;
                     
-                    email_pattern = r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
-                    is_valid = re.match(email_pattern, user_email)
-                    is_fake = '@fake.com' in user_email
-                    is_temp = '@temp-mail.org' in user_email
-
-                    if not is_valid or is_fake or is_temp:
-
-                        cursor.execute("""
+                    LOOP
+                        FETCH c_inscricao INTO v_inscricao;
+                        EXIT WHEN c_inscricao%NOTFOUND;
+                        
+                        v_encontrou_registro := TRUE;
+                        
+                        IF NOT REGEXP_LIKE(v_inscricao.email, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$') 
+                            OR v_inscricao.email LIKE '%@fake.com' 
+                            OR v_inscricao.email LIKE '%@temp-mail.org' THEN
+                            
                             UPDATE usuarios 
                             SET trust_score = trust_score - 15 
-                            WHERE id = :user_id
-                        """, user_id=user_id)
-
-                        cursor.execute("""
+                            WHERE id = v_inscricao.usuario_id;
+                            
                             UPDATE inscricoes 
                             SET status = 'CANCELLED' 
-                            WHERE id = :inscricao_id
-                        """, inscricao_id=inscricao_id)
-
-                        cursor.execute("""
-                            INSERT INTO LOG_AUDITORIA (INSCRICAO_ID, MOTIVO) 
-                            VALUES (:inscricao_id, 'E-mail fraudulento ou malformado detectado (varredura individual).')
-                        """, inscricao_id=inscricao_id)
-                        
-                        conn.commit()
-                        flash(f'Varredura INDIVIDUAL executada com sucesso para a Inscrição ID #{reg_id}. E-mail suspeito detectado e ação tomada.', 'info')
-                    else:
-                        flash(f'Varredura INDIVIDUAL executada para a Inscrição ID #{reg_id}. Nenhum problema detectado.', 'info')
-                else:
-                    flash(f'Inscrição com ID #{reg_id} não encontrada.', 'error')
-                
+                            WHERE id = v_inscricao.id_inscricao;
+                            
+                            INSERT INTO LOG_AUDITORIA (INSCRICAO_ID, MOTIVO, DATA) 
+                            VALUES (v_inscricao.id_inscricao, 'E-mail fraudulento ou malformado detectado (varredura individual).', SYSDATE);
+                        END IF;
+                    END LOOP;
+                    
+                    CLOSE c_inscricao;
+                    
+                    IF NOT v_encontrou_registro THEN
+                        RAISE_APPLICATION_ERROR(-20002, 'Inscrição não encontrada ou não pendente.');
+                    END IF;
+                    
+                    COMMIT;
+                EXCEPTION
+                    WHEN OTHERS THEN
+                        ROLLBACK;
+                        RAISE;
+                END;
+            '''
+            
+            with obter_conexao() as conn:
+                cursor = conn.cursor()
+                cursor.execute(bloco_plsql_id, p_inscricao_id=reg_id)
+                flash(f'Varredura individual executada para a Inscrição ID #{reg_id}. Ações aplicadas via PL/SQL.', 'info')
                 cursor.close()
-        except oracledb.Error as e:
-            flash(f'Erro ao executar varredura individual: {e}', 'error')
-            print(f"Erro ao executar varredura individual: {e}")
+        except oracledb.DatabaseError as e:
+            error, = e.args
+            if error.code == 20002:
+                flash(f'Inscrição com ID #{reg_id} não encontrada ou não pendente.', 'warning')
+            else:
+                flash(f'Erro Oracle na varredura individual: Código {error.code} - {error.message}', 'error')
+                print(f"Erro ao executar varredura individual: {error.code} - {error.message}")
         except Exception as ex:
             flash(f'Ocorreu um erro inesperado durante a varredura individual: {ex}', 'error')
             print(f"Erro inesperado: {ex}")
