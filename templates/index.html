@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOC - Global Cyber Summit</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ SOC Dashboard - Global Cyber Summit</h1>
+            <p>Monitoramento de Inscrições e Proteção contra Botnets</p>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="alerts">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <section class="actions-grid">
+            <!-- Varredura Automática -->
+            <div class="action-panel">
+                <h2>🚨 Varredura Automática 🚨</h2>
+                <p>Inicia a varredura PL/SQL em <strong>todas</strong> as inscrições com status 'PENDING' para detectar e-mails suspeitos (fake.com, temp-mail).</p>
+                <form action="{{ url_for('run_audit') }}" method="POST">
+                    <button type="submit" class="btn-scan">INICIAR VARREDURA GERAL</button>
+                </form>
+            </div>
+
+            <!-- Varredura por ID -->
+            <div class="action-panel">
+                <h2>🔎 Varredura por ID 🔎</h2>
+                <p>Analisa uma inscrição específica. O PL/SQL irá verificar o e-mail e aplicar as regras de negócio apenas para o ID fornecido.</p>
+                <form action="{{ url_for('run_audit_id') }}" method="POST" class="form-inline">
+                    <input type="number" name="reg_id" placeholder="ID da Inscrição" required>
+                    <button type="submit" class="btn-scan-id">VERIFICAR ID</button>
+                </form>
+            </div>
+        </section>
+
+        <section class="dashboard">
+            <div class="panel">
+                <h2>Inscrições Suspeitas (PENDING)</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Nome</th>
+                            <th>Email</th>
+                            <th>Trust Score</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for reg in registrations %}
+                        <tr>
+                            <td>#{{ reg.id }}</td>
+                            <td>{{ reg.name }}</td>
+                            <td class="{% if 'fake' in reg.email or 'temp' in reg.email %}suspicious{% endif %}">
+                                {{ reg.email }}
+                            </td>
+                            <td>{{ reg.trust_score }}</td>
+                            <td><span class="badge pending">{{ reg.status }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="panel">
+                <h2>Log de Auditoria Recente</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Insc. ID</th>
+                            <th>Motivo do Cancelamento</th>
+                            <th>Data/Hora</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in logs %}
+                        <tr>
+                            <td>#{{ log.inscricao_id }}</td>
+                            <td class="log-reason">{{ log.motivo }}</td>
+                            <td>{{ log.data }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3">Nenhum log recente.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</body>
+</html>
