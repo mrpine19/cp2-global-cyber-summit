@@ -3,114 +3,130 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SOC - Global Cyber Summit</title>
+    <title>Cyber SOC | Global Cyber Summit</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🛡️ SOC Dashboard - Global Cyber Summit</h1>
-            <p>Monitoramento de Inscrições e Proteção contra Botnets</p>
+    <div class="sidebar">
+        <div class="logo">
+            <span class="shield-icon">🛡️</span>
+            <div class="logo-text">
+                <h1>CYBER SOC</h1>
+                <span>GLOBAL SUMMIT</span>
+            </div>
+        </div>
+        <nav>
+            <div class="nav-item active">Monitoramento</div>
+            <div class="nav-status">Sistema: <span>Online</span></div>
+        </nav>
+    </div>
+
+    <main class="main-content">
+        <header class="top-bar">
+            <div class="welcome">
+                <h2>Dashboard de Segurança</h2>
+                <p>Proteção de registros contra ataques botnet em tempo real.</p>
+            </div>
         </header>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-                <div class="alerts">
+                <div class="alerts-container">
                     {% for category, message in messages %}
-                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                        <div class="alert alert-{{ category }}">
+                            {{ message }}
+                        </div>
                     {% endfor %}
                 </div>
             {% endif %}
         {% endwith %}
 
-        <section class="actions-grid">
-            <div class="action-panel">
-                <h2>🚨 Varredura Automática 🚨</h2>
-                <p>Inicia a varredura PL/SQL em <strong>todas</strong> as inscrições com status 'PENDING' para detectar e-mails suspeitos (fake.com, temp-mail).</p>
+        <section class="quick-actions">
+            <div class="card action-card">
+                <h3>Varredura em Lote</h3>
+                <p>Executa análise PL/SQL em massa no banco.</p>
                 <form action="{{ url_for('run_audit') }}" method="POST">
-                    <button type="submit" class="btn-scan">INICIAR VARREDURA GERAL</button>
+                    <button type="submit" class="btn btn-primary">EXECUTAR VARREDURA GERAL</button>
                 </form>
             </div>
 
-            <div class="action-panel">
-                <h2>🔎 Varredura por ID 🔎</h2>
-                <p>Analisa uma inscrição específica. O PL/SQL irá verificar o e-mail e aplicar as regras de negócio apenas para o ID fornecido.</p>
-                <form action="{{ url_for('run_audit_id') }}" method="POST" class="form-inline">
-                    <input type="number" name="reg_id" placeholder="ID da Inscrição" required>
-                    <button type="submit" class="btn-scan-id">VERIFICAR ID</button>
+            <div class="card action-card">
+                <h3>Investigação por ID</h3>
+                <p>Verificação individual de alvo suspeito.</p>
+                <form action="{{ url_for('run_audit_id') }}" method="POST" class="form-row">
+                    <input type="number" name="reg_id" placeholder="ID Registro" required>
+                    <button type="submit" class="btn btn-secondary">ANALISAR</button>
                 </form>
             </div>
 
-            <div class="action-panel">
-                <h2>👤 Adicionar Usuário e Inscrição 👤</h2>
-                <p>Cria um novo usuário e automaticamente adiciona uma inscrição pendente para ele.</p>
-                <form action="{{ url_for('add_user') }}" method="POST" class="form-inline" style="flex-direction: column; align-items: stretch; gap: 10px;">
-                    <input type="text" name="nome" placeholder="Nome Completo" required>
-                   <input type="text" name="email" placeholder="E-mail" required>
-                    <button type="submit" class="btn-scan" style="background-color: #28a745;">CRIAR USUÁRIO</button>
+            <div class="card action-card">
+                <h3>Novo Registro</h3>
+                <p>Inserir usuário para teste de sandbox.</p>
+                <form action="{{ url_for('add_user') }}" method="POST" class="form-row">
+                    <input type="text" name="nome" placeholder="Nome" required>
+                    <input type="text" name="email" placeholder="Email (Livre para testes)" required>
+                    <button type="submit" class="btn btn-success">CRIAR</button>
                 </form>
             </div>
         </section>
 
-        <section class="dashboard">
-            <div class="panel">
-                <h2>Inscrições Suspeitas</h2>
+        <div class="data-grid">
+            <div class="card table-container">
+                <div class="table-header">
+                    <h3>Fila de Inscrições Pendentes</h3>
+                </div>
                 <table>
                     <thead>
                         <tr>
-                            <th>ID Insc.</th>
-                            <th>Nome</th>
-                            <th>Email</th>
-                            <th>Trust Score</th>
-                            <th>Status</th>
+                            <th>ID</th>
+                            <th>USUÁRIO</th>
+                            <th>EMAIL</th>
+                            <th>TRUST SCORE</th>
+                            <th>STATUS</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for reg in registrations %}
                         <tr>
-                            <td>#{{ reg.inscricao_id }}</td>
+                            <td class="id-cell">#{{ reg.id }}</td>
                             <td>{{ reg.name }}</td>
-                            <td class="{% if 'fake' in reg.email or 'temp' in reg.email %}suspicious{% endif %}">
+                            <td class="email-cell {% if 'fake' in reg.email or 'temp' in reg.email %}danger-text{% endif %}">
                                 {{ reg.email }}
                             </td>
-                            <td>{{ reg.trust_score }}</td>
-                            <td><span class="badge pending">{{ reg.status }}</span></td>
+                            <td>
+                                <div class="score-bar">
+                                    <span class="score-value">{{ reg.trust_score }}</span>
+                                </div>
+                            </td>
+                            <td><span class="badge {{ reg.status.lower() }}">{{ reg.status }}</span></td>
                         </tr>
                         {% else %}
-                        <tr>
-                            <td colspan="5">Nenhuma inscrição pendente.</td>
-                        </tr>
+                        <tr><td colspan="5" class="empty">Nenhum registro pendente na fila.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
 
-            <div class="panel">
-                <h2>Log de Auditoria Recente</h2>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Insc. ID</th>
-                            <th>Motivo do Cancelamento</th>
-                            <th>Data/Hora</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for log in logs %}
-                        <tr>
-                            <td>#{{ log.inscricao_id }}</td>
-                            <td class="log-reason">{{ log.motivo }}</td>
-                            <td>{{ log.data }}</td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="3">Nenhum log recente.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <div class="card table-container">
+                <div class="table-header">
+                    <h3>Logs de Auditoria</h3>
+                </div>
+                <div class="log-list">
+                    {% for log in logs %}
+                    <div class="log-item">
+                        <div class="log-meta">
+                            <span class="log-id">ID #{{ log.inscricao_id }}</span>
+                            <span class="log-date">{{ log.data }}</span>
+                        </div>
+                        <p class="log-reason">{{ log.motivo }}</p>
+                    </div>
+                    {% else %}
+                    <p class="empty">Sem atividades recentes.</p>
+                    {% endfor %}
+                </div>
             </div>
-        </section>
-    </div>
+        </div>
+    </main>
 </body>
 </html>
